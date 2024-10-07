@@ -1,3 +1,10 @@
-from django.shortcuts import render
+from rest_framework.generics import ListAPIView
+from rest_framework.views import APIView
 
-# Create your views here.
+from .models import Currency
+from .serializers import CurrencySerializer
+
+
+class CurrencyList(ListAPIView):
+    queryset = Currency.objects.all()
+    serializer_class = CurrencySerializer
