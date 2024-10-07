@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from .models import Currency
+from . import models
 
 
 class CurrencySerializer(serializers.ModelSerializer):
     class Meta:
-        model = Currency
+        model = models.Currency
         fields = '__all__'

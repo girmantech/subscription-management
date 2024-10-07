@@ -1,6 +1,8 @@
+from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
-# Create your models here.
+
 class Currency(models.Model):
     code = models.CharField(max_length=3, primary_key=True)
     name = models.CharField(max_length=320)
@@ -11,10 +13,13 @@ class Currency(models.Model):
 
 
 class Customer(models.Model):
-    id = models.BigAutoField(primary_key=True)
-    name = models.CharField(max_length=320)
-    phone = models.CharField(max_length=32)
-    email = models.CharField(max_length=320)
+    name = models.CharField(max_length=255)
+    phone = models.CharField(
+        max_length=11,
+        validators=[RegexValidator(regex=r'^\d{10}$', message="Phone number must be 10-digit long.")],
+        unique=True
+    )
+    email = models.EmailField(max_length=255, unique=True)
     currency = models.ForeignKey(Currency, on_delete=models.RESTRICT)
     address1 = models.CharField(max_length=255)
     address2 = models.CharField(max_length=255, blank=True, null=True)
@@ -27,8 +32,20 @@ class Customer(models.Model):
         return self.name
 
 
+class OTP(models.Model):
+    user = models.OneToOneField(Customer, on_delete=models.CASCADE, primary_key=True)
+    otp = models.CharField(max_length=6)
+    expires_at = models.BigIntegerField()
+
+    def is_expired(self):
+        current_time = int(timezone.now().timestamp())
+        return current_time > self.expires_at
+
+    def __str__(self):
+        return f"OTP {self.otp} for {self.user.phone}"
+
+
 class Product(models.Model):
-    id = models.BigAutoField(primary_key=True)
     name = models.CharField(max_length=255)
     description = models.CharField(max_length=1000, blank=True, null=True)
     created_at = models.BigIntegerField()
@@ -39,7 +56,6 @@ class Product(models.Model):
 
 
 class ProductPricing(models.Model):
-    id = models.BigAutoField(primary_key=True)
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     from_date = models.BigIntegerField()
     to_date = models.BigIntegerField()
@@ -54,7 +70,6 @@ class ProductPricing(models.Model):
 
 
 class Plan(models.Model):
-    id = models.BigAutoField(primary_key=True)
     product = models.ForeignKey(Product, on_delete=models.RESTRICT)
     billing_interval = models.IntegerField(default=1)
     created_at = models.BigIntegerField()
@@ -65,7 +80,6 @@ class Plan(models.Model):
 
 
 class Invoice(models.Model):
-    id = models.BigAutoField(primary_key=True)
     customer = models.ForeignKey(Customer, on_delete=models.RESTRICT)
     plan = models.ForeignKey(Plan, on_delete=models.RESTRICT)
     tax_amount = models.IntegerField()
@@ -88,8 +102,6 @@ class Invoice(models.Model):
     
 
 class Subscription(models.Model):
-    id = models.BigAutoField(primary_key=True)
-
     class SubscriptionStatus(models.TextChoices):
         ACTIVE = "ACTIVE"
         INACTIVE = "INACTIVE"
