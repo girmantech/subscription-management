@@ -33,7 +33,7 @@ class Customer(models.Model):
 
 
 class OTP(models.Model):
-    user = models.OneToOneField(Customer, on_delete=models.CASCADE, primary_key=True)
+    customer = models.OneToOneField(Customer, on_delete=models.CASCADE, primary_key=True)
     otp = models.CharField(max_length=6)
     expires_at = models.BigIntegerField()
 
@@ -42,7 +42,7 @@ class OTP(models.Model):
         return current_time > self.expires_at
 
     def __str__(self):
-        return f"OTP {self.otp} for {self.user.phone}"
+        return f"OTP {self.otp} for {self.customer.phone}"
 
 
 class Product(models.Model):
