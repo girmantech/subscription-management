@@ -15,25 +15,28 @@ class Currency(models.Model):
 class Customer(models.Model):
     name = models.CharField(max_length=255)
     phone = models.CharField(
-        max_length=11,
+        max_length=10,
         validators=[RegexValidator(regex=r'^\d{10}$', message="Phone number must be 10-digit long.")],
         unique=True
     )
-    email = models.EmailField(max_length=255, unique=True)
-    currency = models.ForeignKey(Currency, on_delete=models.RESTRICT)
-    address1 = models.CharField(max_length=255)
-    address2 = models.CharField(max_length=255, blank=True, null=True)
-    city = models.CharField(max_length=255)
-    postal_code = models.CharField(max_length=12)
+    email = models.EmailField(max_length=255, unique=True, null=True, blank=True)
+    currency = models.ForeignKey(Currency, on_delete=models.RESTRICT, null=True, blank=True)
+    address = models.CharField(max_length=255, blank=True, null=True)
+    city = models.CharField(max_length=255, null=True, blank=True)
+    postal_code = models.CharField(max_length=12, null=True, blank=True)
     created_at = models.BigIntegerField()
-    deleted_at = models.BigIntegerField(blank=True, null=True)
+    deleted_at = models.BigIntegerField(null=True, blank=True)
 
     def __str__(self):
         return self.name
 
 
 class OTP(models.Model):
-    customer = models.OneToOneField(Customer, on_delete=models.CASCADE, primary_key=True)
+    phone = phone = models.CharField(
+        max_length=10,
+        validators=[RegexValidator(regex=r'^\d{10}$', message="Phone number must be 10-digit long.")],
+        unique=True
+    )
     otp = models.CharField(max_length=6)
     expires_at = models.BigIntegerField()
 

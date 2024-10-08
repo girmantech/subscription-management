@@ -2,6 +2,7 @@ import random
 
 from django.db import connection, transaction
 from django.utils import timezone
+from django.forms.models import model_to_dict
 
 from rest_framework import generics
 from rest_framework.response import Response
@@ -18,9 +19,11 @@ class CurrencyList(generics.ListAPIView):
     serializer_class = serializers.CurrencySerializer
 
 
-class RegisterView(APIView):
+class Signup(APIView):
     def post(self, request):
+        request.data['created_at'] = int(timezone.now().timestamp())
         serializer = serializers.CustomerSerializer(data=request.data)
+        
         if serializer.is_valid():
             serializer.save()
 
@@ -29,7 +32,7 @@ class RegisterView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class LoginView(APIView):
+class Signin(APIView):
     def post(self, request):
         phone = request.data.get('phone')
 
@@ -40,21 +43,22 @@ class LoginView(APIView):
             otp_code = '{:06d}'.format(random.randint(0, 999999))
             expires_at = int((timezone.now() + timezone.timedelta(minutes=10)).timestamp())
 
-            models.OTP.objects.update_or_create(
-                customer=customer,
+            otp, _ = models.OTP.objects.update_or_create(
+                phone=phone,
                 defaults={
                     'otp': otp_code,
                     'expires_at': expires_at
                 }
             )
 
-            return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+            # return Response({"message": "OTP sent successfully"}, status=status.HTTP_200_OK)
+            return Response({"id": otp.id, "otp": otp.otp}, status=status.HTTP_200_OK)
 
         except models.Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
 
-class OTPValidationView(APIView):
+class OTPValidation(APIView):
     def post(self, request):
         phone = request.data.get('phone')
         input_otp = request.data.get('otp')
@@ -63,7 +67,7 @@ class OTPValidationView(APIView):
             customer = models.Customer.objects.get(phone=phone)
 
             try:
-                otp_record = models.OTP.objects.get(customer=customer)
+                otp_record = models.OTP.objects.get(phone=phone)
 
                 if otp_record.is_expired():
                     return Response({"error": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
@@ -84,9 +88,28 @@ class OTPValidationView(APIView):
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
-class MeView(APIView):
+class Me(APIView):
     def get(self, request):
-        return Response(request.customer, status=status.HTTP_200_OK)
+        try:
+            customer = models.Customer.objects.get(id=request.customer_id)
+            return Response(model_to_dict(customer), status=status.HTTP_200_OK)
+        
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    def patch(self, request):
+        try:
+            customer = models.Customer.objects.get(id=request.customer_id)
+            serializer = serializers.CustomerSerializer(customer, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class CustomerList(generics.ListCreateAPIView):
@@ -102,7 +125,12 @@ class CustomerDetail(generics.RetrieveUpdateDestroyAPIView):
 class ProductList(APIView):
     def get(self, request):
         try:
-            currency_id = request.customer['currency']
+            customer = models.Customer.objects.get(id=request.customer_id)
+            
+            try:
+                currency = customer.currency.code
+            except Exception as e:
+                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -116,12 +144,15 @@ class ProductList(APIView):
                     LEFT JOIN api_productpricing AS price ON product.id = price.product_id
                     WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
                     AND product.deleted_at IS NULL AND price.deleted_at IS NULL AND price.currency_id = %s;
-                """, [currency_id])
+                """, [currency])
 
                 results = dictfetchall(cursor)
             
             return Response(results)
     
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+        
         except Exception as e:
             return Response({'error': str(e)}, status=500)
 
@@ -129,7 +160,12 @@ class ProductList(APIView):
 class PlanList(APIView):
     def get(self, request):
         try:
-            currency_id = request.customer['currency']
+            customer = models.Customer.objects.get(id=request.customer_id)
+
+            try:
+                currency = customer.currency.code
+            except Exception as e:
+                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -148,11 +184,14 @@ class PlanList(APIView):
                     AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
                     AND product.deleted_at IS NULL AND price.deleted_at IS NULL
                     AND price.currency_id = %s;
-                """, [currency_id])
+                """, [currency])
 
                 results = dictfetchall(cursor)
             
             return Response(results)
+        
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
     
         except Exception as e:
             return Response({'error': str(e)}, status=500)
@@ -161,7 +200,12 @@ class PlanList(APIView):
 class PlanListForProduct(APIView):
     def get(self, request, product_id):
         try:
-            currency_id = request.customer['currency']
+            customer = models.Customer.objects.get(id=request.customer_id)
+
+            try:
+                currency = customer.currency.code
+            except Exception as e:
+                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -181,11 +225,22 @@ class PlanListForProduct(APIView):
                     AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
                     AND product.deleted_at IS NULL AND price.deleted_at IS NULL
                     AND price.currency_id = %s;
-                """, [product_id, currency_id])
+                """, [product_id, currency])
 
                 results = dictfetchall(cursor)
             
             return Response(results)
-    
+
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+
+
+class Subscription(APIView):
+    def post(self, request):
+        plan_id = request.data.get('plan_id')
+
+        if not plan_id:
+            return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)

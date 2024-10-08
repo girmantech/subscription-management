@@ -6,8 +6,8 @@ class JWTAuthMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.unprotected_routes = {
-            '/api/register/': ['POST'],
-            '/api/login/': ['POST'],
+            '/api/signup/': ['POST'],
+            '/api/signin/': ['POST'],
             '/api/validate-otp/': ['POST'],
             '/api/token/refresh/': ['POST'],
         }
@@ -25,7 +25,7 @@ class JWTAuthMiddleware:
                 token = auth_header.split(' ')[1]
                 try:
                     access_token = AccessToken(token)
-                    request.customer = access_token.payload
+                    request.customer_id = access_token.payload['customer_id']
 
                 except (InvalidToken, TokenError) as e:
                     return JsonResponse({'error': 'Invalid or expired token'}, status=401)
