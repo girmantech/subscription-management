@@ -18,33 +18,6 @@ class CurrencyList(generics.ListAPIView):
     serializer_class = serializers.CurrencySerializer
 
 
-class ProductList(APIView):
-    def get(self, request):
-        try:
-            currency_id = request.customer['currency']
-            
-            with connection.cursor() as cursor:
-                cursor.execute("""
-                    SELECT
-                        product.id as product_id,
-                        product.name,
-                        product.description,
-                        price.price,
-                        price.currency_id
-                    FROM api_product AS product
-                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
-                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
-                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL AND price.currency_id = %s;
-                """, [currency_id])
-
-                results = dictfetchall(cursor)
-            
-            return Response(results)
-    
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
-
-
 class RegisterView(APIView):
     def post(self, request):
         serializer = serializers.CustomerSerializer(data=request.data)
@@ -111,6 +84,11 @@ class OTPValidationView(APIView):
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
+class MeView(APIView):
+    def get(self, request):
+        return Response(request.customer, status=status.HTTP_200_OK)
+
+
 class CustomerList(generics.ListCreateAPIView):
     queryset = models.Customer.objects.all()
     serializer_class = serializers.CustomerSerializer
@@ -119,3 +97,95 @@ class CustomerList(generics.ListCreateAPIView):
 class CustomerDetail(generics.RetrieveUpdateDestroyAPIView):
     queryset = models.Customer.objects.all()
     serializer_class = serializers.CustomerSerializer
+
+
+class ProductList(APIView):
+    def get(self, request):
+        try:
+            currency_id = request.customer['currency']
+            
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        product.id as product_id,
+                        product.name,
+                        product.description,
+                        price.price,
+                        price.currency_id
+                    FROM api_product AS product
+                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
+                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL AND price.currency_id = %s;
+                """, [currency_id])
+
+                results = dictfetchall(cursor)
+            
+            return Response(results)
+    
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
+class PlanList(APIView):
+    def get(self, request):
+        try:
+            currency_id = request.customer['currency']
+            
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        plan.id as plan_id,
+                        product.id as product_id,
+                        product.name,
+                        product.description,
+                        price.price,
+                        price.currency_id,
+                        plan.billing_interval
+                    FROM api_plan AS plan
+                    LEFT JOIN api_product AS product ON plan.product_id = product.id
+                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
+                    AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
+                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL
+                    AND price.currency_id = %s;
+                """, [currency_id])
+
+                results = dictfetchall(cursor)
+            
+            return Response(results)
+    
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
+class PlanListForProduct(APIView):
+    def get(self, request, product_id):
+        try:
+            currency_id = request.customer['currency']
+            
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT
+                        plan.id as plan_id,
+                        product.id as product_id,
+                        product.name,
+                        product.description,
+                        price.price,
+                        price.currency_id,
+                        plan.billing_interval
+                    FROM api_plan AS plan
+                    LEFT JOIN api_product AS product ON plan.product_id = product.id
+                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
+                    AND product.id = %s
+                    AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
+                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL
+                    AND price.currency_id = %s;
+                """, [product_id, currency_id])
+
+                results = dictfetchall(cursor)
+            
+            return Response(results)
+    
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
