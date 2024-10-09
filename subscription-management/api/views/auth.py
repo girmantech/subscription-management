@@ -29,6 +29,9 @@ class Signin(APIView):
     def post(self, request):
         phone = request.data.get('phone')
 
+        if not phone:
+            return Response({'error': 'phone number missing'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             customer = models.Customer.objects.get(phone=phone)
 
@@ -48,13 +51,18 @@ class Signin(APIView):
             return Response({"id": otp.id, "otp": otp.otp}, status=status.HTTP_200_OK)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
 
 class OTPValidation(APIView):
     def post(self, request):
         phone = request.data.get('phone')
         input_otp = request.data.get('otp')
+
+        if not phone:
+            return Response({'error': 'phone number missing'}, status=status.HTTP_400_BAD_REQUEST)
+        if not input_otp:
+            return Response({'error': 'OTP missing'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             customer = models.Customer.objects.get(phone=phone)
@@ -72,10 +80,10 @@ class OTPValidation(APIView):
                     return Response(tokens, status=status.HTTP_200_OK)
                 
                 else:
-                    return Response({"error": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({"error": "invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
 
             except models.OTP.DoesNotExist:
-                return Response({"error": "OTP not found for this customer"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"error": "OTP not found for the customer"}, status=status.HTTP_404_NOT_FOUND)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)

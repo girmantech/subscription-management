@@ -6,24 +6,23 @@ from rest_framework import status
 from rest_framework.views import APIView
 
 from .. import models
-from ..utils import dictfetchone
+from ..utils import dictfetchone, dictfetchall
 
 
 class Subscription(APIView):
     def post(self, request):
-        try:
-            plan_id = request.data.get('plan_id')
+        plan_id = request.data.get('plan_id')
 
-            if not plan_id:
-                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
-            
+        if not plan_id:
+            return Response({"error": "plan id missing"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
             customer = models.Customer.objects.get(id=request.customer_id)
 
             try:
                 currency = customer.currency.code
             except:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
-                
+                return Response({'error': 'currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 # fetching product price, tax percentage and billing interval
@@ -40,7 +39,7 @@ class Subscription(APIView):
                 try:
                     result = dictfetchone(cursor)
                 except:
-                    return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({'error': "selected plan is not associated with customer's curreny"}, status=status.HTTP_404_NOT_FOUND)
                 
                 # tax and total amount calculation
                 billing_interval = result['billing_interval']
@@ -77,28 +76,47 @@ class Subscription(APIView):
 
             # TODO: Write a CRON-JOB to clean up the subscription and invoices table if the payment in not made within 2 hours 
 
-            return Response({'message': 'Invoice and subscription created successfully'}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'invoice and subscription created successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+    
+
+    def get(self, request):
+        try:
+            customer = models.Customer.objects.get(id=request.customer_id)
+
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    SELECT * FROM api_subscription
+                    WHERE customer_id = %s
+                    AND status = 'ACTIVE';
+                """, [customer.id])
+                
+                result = dictfetchall(cursor)
+
+            return Response(result, status=status.HTTP_200_OK)
+        
+        except models.Customer.DoesNotExist:
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
 
 
 class ActivateSubscription(APIView):
     def post(self, request):
-        try:
-            invoice_id = request.data.get('invoice_id')
-            payment_status = request.data.get('payment_status')
+        invoice_id = request.data.get('invoice_id')
+        payment_status = request.data.get('payment_status')
 
-            if not invoice_id:
-                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
-            if not payment_status:
-                return Response({"error": "Invalid payment status"}, status=status.HTTP_400_BAD_REQUEST)
-            
+        if not invoice_id:
+            return Response({"error": "plan id missing"}, status=status.HTTP_400_BAD_REQUEST)
+        if not payment_status:
+            return Response({"error": "payment status missing"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
             if payment_status == 'DUE':
-                return Response({"error": "Payment is pending"}, status=status.HTTP_402_PAYMENT_REQUIRED)
+                return Response({"error": "payment is pending"}, status=status.HTTP_402_PAYMENT_REQUIRED)
             
             # ?? Check if invoice already paid
             
@@ -149,7 +167,7 @@ class ActivateSubscription(APIView):
                                 WHERE invoice_id = %s;
                             """, [start_timestamp, end_timestamp, invoice_id])
 
-                        return Response({'message': 'Subscription activated'}, status=status.HTTP_201_CREATED)
+                        return Response({'message': 'subscription activated'}, status=status.HTTP_201_CREATED)
 
                     ### renewal case ###
                     else:
@@ -175,13 +193,13 @@ class ActivateSubscription(APIView):
                                 AND deleted_at IS NULL AND status = 'ACTIVE';
                             """, [next_subscription_id])
 
-                    return Response({'message': 'Subscription renewed'}, status=status.HTTP_201_CREATED)
+                    return Response({'message': 'subscription renewed'}, status=status.HTTP_201_CREATED)
             
             else:
-                return Response({"error": "Invalid payment status"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": "invalid payment status"}, status=status.HTTP_400_BAD_REQUEST)
             
         except models.Subscription.DoesNotExist:
-            return Response({"error": "Subscription not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "subscription not found"}, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
@@ -189,19 +207,19 @@ class ActivateSubscription(APIView):
 
 class UpgradeSubscription(APIView):
     def post(self, request):
-        try:
-            plan_id = request.data.get('plan_id')
+        plan_id = request.data.get('plan_id')
 
-            if not plan_id:
-                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
-            
+        if not plan_id:
+            return Response({"error": "invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
             customer = models.Customer.objects.get(id=request.customer_id)
             plan = models.Plan.objects.get(id=plan_id)
 
             try:
                 currency = customer.currency.code
             except:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)    
+                return Response({'error': 'currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)    
             
             # getting unused percentage from the current plan
             with connection.cursor() as cursor:
@@ -218,7 +236,7 @@ class UpgradeSubscription(APIView):
                 try:
                     result = dictfetchone(cursor)
                 except:
-                    return Response({'error': 'No active subscription found'}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({'error': 'no active subscription found'}, status=status.HTTP_404_NOT_FOUND)
                 
                 current_subscription_starts_at = result['starts_at']
                 current_subscription_ends_at = result['ends_at']
@@ -248,7 +266,7 @@ class UpgradeSubscription(APIView):
                 try:
                     result = dictfetchone(cursor)
                 except:
-                    return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response({'error': "selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
                 
                 # tax and total amount calculation
                 billing_interval = result['billing_interval']
@@ -297,13 +315,13 @@ class UpgradeSubscription(APIView):
                             AND deleted_at IS NULL AND status = 'ACTIVE';
                     """, [plan_id, customer.id])
 
-            return Response({'message': 'Subscription upgraded successfully'}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'subscription upgraded successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except models.Plan.DoesNotExist:
-            return Response({"error": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "plan not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except Exception as e:
             return Response({'error': str(e)}, status=500)
@@ -311,26 +329,26 @@ class UpgradeSubscription(APIView):
 
 class DowngradeSubscription(APIView):
     def post(self, request):
-        try:
-            plan_id = request.data.get('plan_id')
+        plan_id = request.data.get('plan_id')
 
-            if not plan_id:
-                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
-            
+        if not plan_id:
+            return Response({"error": "missing plan id"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
             customer = models.Customer.objects.get(id=request.customer_id)
             plan = models.Plan.objects.get(id=plan_id)
 
             try:
                 currency = customer.currency.code
             except:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             try:
                 product = plan.product
                 pricing = models.ProductPricing.objects.get(product=product)
                 assert pricing.currency.code == currency
             except:
-                return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({'error': "selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -342,13 +360,13 @@ class DowngradeSubscription(APIView):
                         AND deleted_at IS NULL AND status = 'ACTIVE';
                 """, [plan_id, customer.id])
 
-            return Response({'message': 'Subscription downgraded successfully'}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'subscription downgraded successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except models.Plan.DoesNotExist:
-            return Response({"error": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "plan not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except Exception as e:
             return Response({'error': str(e)}, status=500)
@@ -368,13 +386,13 @@ class CancelSubscription(APIView):
                         AND deleted_at IS NULL AND status = 'active';
                 """, [customer.id])
 
-            return Response({'message': 'Subscription cancelled successfully'}, status=status.HTTP_201_CREATED)
+            return Response({'message': 'subscription cancelled successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except models.Plan.DoesNotExist:
-            return Response({"error": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "plan not found"}, status=status.HTTP_404_NOT_FOUND)
         
         except Exception as e:
             return Response({'error': str(e)}, status=500)

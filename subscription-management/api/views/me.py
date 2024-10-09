@@ -15,7 +15,7 @@ class Me(APIView):
             return Response(model_to_dict(customer), status=status.HTTP_200_OK)
         
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
     
     def patch(self, request):
         try:
@@ -29,4 +29,4 @@ class Me(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)

@@ -16,7 +16,7 @@ class PlanList(APIView):
             try:
                 currency = customer.currency.code
             except:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -42,7 +42,7 @@ class PlanList(APIView):
             return Response(results)
         
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
     
         except Exception as e:
             return Response({'error': str(e)}, status=500)
@@ -56,7 +56,7 @@ class PlanListForProduct(APIView):
             try:
                 currency = customer.currency.code
             except:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -83,7 +83,7 @@ class PlanListForProduct(APIView):
             return Response(results)
 
         except models.Customer.DoesNotExist:
-            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
 
         except Exception as e:
             return Response({'error': str(e)}, status=500)
