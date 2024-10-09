@@ -129,7 +129,7 @@ class ProductList(APIView):
             
             try:
                 currency = customer.currency.code
-            except Exception as e:
+            except:
                 return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
@@ -164,7 +164,7 @@ class PlanList(APIView):
 
             try:
                 currency = customer.currency.code
-            except Exception as e:
+            except:
                 return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
@@ -204,7 +204,7 @@ class PlanListForProduct(APIView):
 
             try:
                 currency = customer.currency.code
-            except Exception as e:
+            except:
                 return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
@@ -250,7 +250,7 @@ class Subscription(APIView):
 
             try:
                 currency = customer.currency.code
-            except Exception as e:
+            except:
                 return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
                 
             
@@ -266,11 +266,14 @@ class Subscription(APIView):
                     WHERE plan.id = %s and pricing.currency_id = %s;
                 """, [plan_id, currency])
 
-                result = dictfetchone(cursor)
+                try:
+                    result = dictfetchone(cursor)
+                except:
+                    return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_404_NOT_FOUND)
                 
                 # tax and total amount calculation
                 billing_interval = result['billing_interval']
-                price = result['price']
+                price = float(result['price'])
                 tax_percentage = result['tax_percentage']
 
                 tax_amount = (tax_percentage / 100) * (price * billing_interval)
@@ -325,6 +328,8 @@ class ActivateSubscription(APIView):
             
             if payment_status == 'DUE':
                 return Response({"error": "Payment is pending"}, status=status.HTTP_402_PAYMENT_REQUIRED)
+            
+            # ?? Check if invoice already paid
             
             if payment_status == 'SUCCESS':
                 # check if invoice id associated with any subscription
@@ -422,11 +427,9 @@ class UpgradeSubscription(APIView):
             customer = models.Customer.objects.get(id=request.customer_id)
             plan = models.Plan.objects.get(id=plan_id)
 
-            # ?? Check if product associated with plan not deleted or not
-
             try:
                 currency = customer.currency.code
-            except Exception as e:
+            except:
                 return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)    
             
             # getting unused percentage from the current plan
@@ -474,11 +477,11 @@ class UpgradeSubscription(APIView):
                 try:
                     result = dictfetchone(cursor)
                 except:
-                    return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
                 
                 # tax and total amount calculation
                 billing_interval = result['billing_interval']
-                price = result['price']
+                price = float(result['price'])
                 tax_percentage = result['tax_percentage']
 
                 tax_amount = (tax_percentage / 100) * (price * billing_interval)
@@ -546,13 +549,17 @@ class DowngradeSubscription(APIView):
             customer = models.Customer.objects.get(id=request.customer_id)
             plan = models.Plan.objects.get(id=plan_id)
 
-            # ?? Check if product associated with plan not deleted or not
-            # ?? Check if the new plan associated with currency of the customer or not
-
             try:
                 currency = customer.currency.code
-            except Exception as e:
-                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)    
+            except:
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
+            
+            try:
+                product = plan.product
+                pricing = models.ProductPricing.objects.get(product=product)
+                assert pricing.currency.code == currency
+            except:
+                return Response({'error': "Selected plan not associated with customer's curreny"}, status=status.HTTP_400_BAD_REQUEST)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -565,6 +572,32 @@ class DowngradeSubscription(APIView):
                 """, [plan_id, customer.id])
 
             return Response({'message': 'Subscription downgraded successfully'}, status=status.HTTP_201_CREATED)
+
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        except models.Plan.DoesNotExist:
+            return Response({"error": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
+class CancelSubscription(APIView):
+    def post(self, request):
+        try:
+            customer = models.Customer.objects.get(id=request.customer_id)
+            
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE api_subscription SET
+                        cancelled_at = EXTRACT(EPOCH FROM NOW())
+                    WHERE customer_id = %s
+                        AND EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                        AND deleted_at IS NULL AND status = 'active';
+                """, [customer.id])
+
+            return Response({'message': 'Subscription cancelled successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)

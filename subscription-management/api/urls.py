@@ -16,5 +16,6 @@ urlpatterns = [
     path('subscriptions', views.Subscription.as_view(), name='subscription'),
     path('subscriptions/activate', views.ActivateSubscription.as_view(), name='activate_subscription'),
     path('subscriptions/upgrade', views.UpgradeSubscription.as_view(), name='upgrade_subscription'),
-    path('subscriptions/downgrade', views.DowngradeSubscription.as_view(), name='upgrade_subscription'),
+    path('subscriptions/downgrade', views.DowngradeSubscription.as_view(), name='downgrade_subscription'),
+    path('subscriptions/cancel', views.CancelSubscription.as_view(), name='cancel_subscription'),
 ]
