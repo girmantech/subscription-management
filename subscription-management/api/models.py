@@ -112,7 +112,7 @@ class Subscription(models.Model):
     
     status = models.CharField(max_length=9, choices=SubscriptionStatus.choices, default=SubscriptionStatus.INACTIVE)
 
-    invoice = models.ForeignKey(Invoice, on_delete=models.DO_NOTHING, related_name="subscriptions")
+    invoice = models.OneToOneField(Invoice, on_delete=models.DO_NOTHING, related_name="subscription")
     customer = models.ForeignKey(Customer, on_delete=models.DO_NOTHING, related_name="subscriptions")
     starts_at = models.BigIntegerField()
     ends_at = models.BigIntegerField()

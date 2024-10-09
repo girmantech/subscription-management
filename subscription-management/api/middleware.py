@@ -10,6 +10,7 @@ class JWTAuthMiddleware:
             '/api/signin/': ['POST'],
             '/api/validate-otp/': ['POST'],
             '/api/token/refresh/': ['POST'],
+            '/api/subscriptions/activate/': ['POST'],
         }
 
     def __call__(self, request):

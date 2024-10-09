@@ -14,4 +14,6 @@ urlpatterns = [
     path('plans/', views.PlanList.as_view(), name='plan_list'),
     path('plans/<int:product_id>', views.PlanListForProduct.as_view(), name='plan_list_for_product'),
     path('subscriptions/', views.Subscription.as_view(), name='subscription'),
+    path('subscriptions/activate/', views.ActivateSubscription.as_view(), name='activate_subscription'),
+    path('subscriptions/upgrade/', views.UpgradeSubscription.as_view(), name='upgrade_subscription'),
 ]
