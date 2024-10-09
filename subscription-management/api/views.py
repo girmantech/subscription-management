@@ -130,7 +130,7 @@ class ProductList(APIView):
             try:
                 currency = customer.currency.code
             except Exception as e:
-                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -138,12 +138,12 @@ class ProductList(APIView):
                         product.id as product_id,
                         product.name,
                         product.description,
-                        price.price,
-                        price.currency_id
+                        pricing.price,
+                        pricing.currency_id
                     FROM api_product AS product
-                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
-                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
-                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL AND price.currency_id = %s;
+                    LEFT JOIN api_productpricing AS pricing ON product.id = pricing.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN pricing.from_date AND pricing.to_date
+                    AND product.deleted_at IS NULL AND pricing.deleted_at IS NULL AND pricing.currency_id = %s;
                 """, [currency])
 
                 results = dictfetchall(cursor)
@@ -165,7 +165,7 @@ class PlanList(APIView):
             try:
                 currency = customer.currency.code
             except Exception as e:
-                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -174,16 +174,16 @@ class PlanList(APIView):
                         product.id as product_id,
                         product.name,
                         product.description,
-                        price.price,
-                        price.currency_id,
+                        pricing.price,
+                        pricing.currency_id,
                         plan.billing_interval
                     FROM api_plan AS plan
                     LEFT JOIN api_product AS product ON plan.product_id = product.id
-                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
-                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
+                    LEFT JOIN api_productpricing AS pricing ON product.id = pricing.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN pricing.from_date AND pricing.to_date
                     AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
-                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL
-                    AND price.currency_id = %s;
+                    AND product.deleted_at IS NULL AND pricing.deleted_at IS NULL
+                    AND pricing.currency_id = %s;
                 """, [currency])
 
                 results = dictfetchall(cursor)
@@ -205,7 +205,7 @@ class PlanListForProduct(APIView):
             try:
                 currency = customer.currency.code
             except Exception as e:
-                return Response({'error': 'Currency is not defined for the customer.'}, status=status.HTTP_404_NOT_FOUND)
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
             
             with connection.cursor() as cursor:
                 cursor.execute("""
@@ -214,17 +214,17 @@ class PlanListForProduct(APIView):
                         product.id as product_id,
                         product.name,
                         product.description,
-                        price.price,
-                        price.currency_id,
+                        pricing.price,
+                        pricing.currency_id,
                         plan.billing_interval
                     FROM api_plan AS plan
                     LEFT JOIN api_product AS product ON plan.product_id = product.id
-                    LEFT JOIN api_productpricing AS price ON product.id = price.product_id
-                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN price.from_date AND price.to_date
+                    LEFT JOIN api_productpricing AS pricing ON product.id = pricing.product_id
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN pricing.from_date AND pricing.to_date
                     AND product.id = %s
                     AND plan.deleted_at IS NULL AND product.deleted_at IS NULL
-                    AND product.deleted_at IS NULL AND price.deleted_at IS NULL
-                    AND price.currency_id = %s;
+                    AND product.deleted_at IS NULL AND pricing.deleted_at IS NULL
+                    AND pricing.currency_id = %s;
                 """, [product_id, currency])
 
                 results = dictfetchall(cursor)
@@ -240,7 +240,67 @@ class PlanListForProduct(APIView):
 
 class Subscription(APIView):
     def post(self, request):
-        plan_id = request.data.get('plan_id')
+        try:
+            plan_id = request.data.get('plan_id')
 
-        if not plan_id:
-            return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
+            if not plan_id:
+                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            customer = models.Customer.objects.get(id=request.customer_id)
+
+            try:
+                currency = customer.currency.code
+            except Exception as e:
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)
+                
+            
+            with connection.cursor() as cursor:
+                # fetching product price, tax percentage and billing interval
+                cursor.execute("""
+                    SELECT
+                        pricing.price,
+                        pricing.tax_percentage,
+                        plan.billing_interval
+                    FROM api_productpricing pricing
+                    JOIN api_plan plan on pricing.product_id = plan.product_id
+                    WHERE plan.id = %s and pricing.currency_id = %s;
+                """, [plan_id, currency])
+
+                result = dictfetchone(cursor)
+                
+                # tax and total amount calculation
+                billing_interval = result['billing_interval']
+                price = result['price']
+                tax_percentage = result['tax_percentage']
+
+                tax_amount = (tax_percentage / 100) * (price * billing_interval)
+                total_amount = (price * billing_interval) + tax_amount
+                
+                current_timestamp = timezone.now()
+                start_timestamp = int(current_timestamp.timestamp())
+                end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
+            
+            with transaction.atomic():
+                # creating invoice (draft)
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_date)
+                        VALUES ('draft', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW()))
+                        RETURNING id;
+                    """, [customer.id, plan_id, tax_amount, total_amount])
+
+                    result = dictfetchone(cursor)
+                    invoice_id = result['id']
+
+                # creating subscription (inactive)
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO api_subscription (status, invoice_id, customer_id, starts_at, ends_at)
+                        VALUES ('inactive', %s, %s, %s, %s)
+                    """, [invoice_id, customer.id, start_timestamp, end_timestamp])
+
+            return Response({'message': 'Invoice and subscription created successfully'}, status=status.HTTP_201_CREATED)
+
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
