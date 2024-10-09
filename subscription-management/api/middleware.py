@@ -6,14 +6,17 @@ class JWTAuthMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
         self.unprotected_routes = {
-            '/api/signup/': ['POST'],
-            '/api/signin/': ['POST'],
-            '/api/validate-otp/': ['POST'],
-            '/api/token/refresh/': ['POST'],
-            '/api/subscriptions/activate/': ['POST'],
+            '/api/signup': ['POST'],
+            '/api/signin': ['POST'],
+            '/api/validate-otp': ['POST'],
+            '/api/token/refresh': ['POST'],
+            '/api/subscriptions/activate': ['POST'],
         }
 
     def __call__(self, request):
+        if request.path.startswith('/admin'):
+            return self.get_response(request)
+        
         if request.path in self.unprotected_routes:
             unprotected_methods = self.unprotected_routes[request.path]
             if request.method in unprotected_methods:

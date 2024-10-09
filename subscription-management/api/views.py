@@ -279,6 +279,8 @@ class Subscription(APIView):
                 current_timestamp = timezone.now()
                 start_timestamp = int(current_timestamp.timestamp())
                 end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
+
+            # TODO: handle smallest currency for amounts
             
             with transaction.atomic():
                 # creating invoice (draft)
@@ -421,7 +423,6 @@ class UpgradeSubscription(APIView):
             plan = models.Plan.objects.get(id=plan_id)
 
             # ?? Check if product associated with plan not deleted or not
-            # ?? Check if the new plan associated with currency of the customer or not
 
             try:
                 currency = customer.currency.code
@@ -489,6 +490,8 @@ class UpgradeSubscription(APIView):
                 start_timestamp = int(current_timestamp.timestamp())
                 end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
 
+            # TODO: handle smallest currency for amounts
+
             # creating new invoice and subscriptions
             with transaction.atomic():
                 # creating invoice (draft)
@@ -521,6 +524,47 @@ class UpgradeSubscription(APIView):
                     """, [plan_id, customer.id])
 
             return Response({'message': 'Subscription upgraded successfully'}, status=status.HTTP_201_CREATED)
+
+        except models.Customer.DoesNotExist:
+            return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        except models.Plan.DoesNotExist:
+            return Response({"error": "Plan not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
+class DowngradeSubscription(APIView):
+    def post(self, request):
+        try:
+            plan_id = request.data.get('plan_id')
+
+            if not plan_id:
+                return Response({"error": "Invalid plan id"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            customer = models.Customer.objects.get(id=request.customer_id)
+            plan = models.Plan.objects.get(id=plan_id)
+
+            # ?? Check if product associated with plan not deleted or not
+            # ?? Check if the new plan associated with currency of the customer or not
+
+            try:
+                currency = customer.currency.code
+            except Exception as e:
+                return Response({'error': 'Currency is not defined for the customer'}, status=status.HTTP_404_NOT_FOUND)    
+            
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE api_subscription SET
+                        downgraded_at = EXTRACT(EPOCH FROM NOW()),
+                        downgraded_to_plan_id = %s
+                    WHERE customer_id = %s
+                        AND EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                        AND deleted_at IS NULL AND status = 'ACTIVE';
+                """, [plan_id, customer.id])
+
+            return Response({'message': 'Subscription downgraded successfully'}, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
             return Response({"error": "Customer not found"}, status=status.HTTP_404_NOT_FOUND)

@@ -62,7 +62,7 @@ class ProductPricing(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE)
     from_date = models.BigIntegerField()
     to_date = models.BigIntegerField()
-    price = models.IntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=3)
     currency = models.ForeignKey(Currency, on_delete=models.RESTRICT)
     tax_percentage = models.FloatField()
     created_at = models.BigIntegerField()
