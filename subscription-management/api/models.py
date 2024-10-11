@@ -99,6 +99,7 @@ class Invoice(models.Model):
     paid_at = models.BigIntegerField(blank=True, null=True)
     created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
+    # order_id = models.CharField(max_length=255)
 
     def __str__(self):
         return f"Invoice {self.id} - {self.customer.name} - {self.plan.product.name} - {self.plan.billing_interval} Month(s) - Total: {self.total_amount}"

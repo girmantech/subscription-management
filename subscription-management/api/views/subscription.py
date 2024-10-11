@@ -60,7 +60,7 @@ class Subscription(APIView):
                 with connection.cursor() as cursor:
                     cursor.execute("""
                         INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_date)
-                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '24 hours'))
+                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'))
                         RETURNING id;
                     """, [customer.id, plan_id, tax_amount, total_amount])
 
@@ -70,8 +70,8 @@ class Subscription(APIView):
                 # creating subscription (inactive)
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO api_subscription (status, invoice_id, customer_id, starts_at, ends_at)
-                        VALUES ('INACTIVE', %s, %s, %s, %s)
+                        INSERT INTO api_subscription (status, invoice_id, customer_id, starts_at, ends_at, created_at)
+                        VALUES ('INACTIVE', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()))
                     """, [invoice_id, customer.id, start_timestamp, end_timestamp])
 
             # TODO: Write a CRON-JOB to clean up the subscription and invoices table if the payment in not made within 2 hours 
@@ -93,7 +93,8 @@ class Subscription(APIView):
                 cursor.execute("""
                     SELECT * FROM api_subscription
                     WHERE customer_id = %s
-                    AND status = 'ACTIVE';
+                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                    AND status = 'ACTIVE' AND deleted_at IS NULL;
                 """, [customer.id])
                 
                 result = dictfetchall(cursor)
@@ -290,7 +291,7 @@ class UpgradeSubscription(APIView):
                 with connection.cursor() as cursor:
                     cursor.execute("""
                         INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_date)
-                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW()))
+                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'))
                         RETURNING id;
                     """, [customer.id, plan_id, tax_amount, total_amount])
 

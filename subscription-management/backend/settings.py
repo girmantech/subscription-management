@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'api',
+    'django_crontab',
 ]
 
 MIDDLEWARE = [
@@ -83,16 +84,35 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': environ.get('POSTGRES_DB'),
-        'USER': environ.get('POSTGRES_USER'),
-        'PASSWORD': environ.get('POSTGRES_PASSWORD'),
-        'HOST': 'localhost',
-        'PORT': '5432'
+
+USE_AWS_RDS = False
+
+if USE_AWS_RDS:
+    from .aws_secrets_manager import get_secret
+    aws_secret = get_secret()
+
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': environ.get('DB_NAME'),
+            'USER': aws_secret['username'],
+            'PASSWORD': aws_secret['password'],
+            'HOST': environ.get('DB_HOST'),
+            'PORT': environ.get('DB_PORT')
+        }
     }
-}
+
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': environ.get('POSTGRES_DB'),
+            'USER': environ.get('POSTGRES_USER'),
+            'PASSWORD': environ.get('POSTGRES_PASSWORD'),
+            'HOST': 'localhost',
+            'PORT': '5432'
+        }
+    }
 
 
 # Password validation
@@ -181,3 +201,7 @@ SIMPLE_JWT = {
     "SLIDING_TOKEN_OBTAIN_SERIALIZER": "rest_framework_simplejwt.serializers.TokenObtainSlidingSerializer",
     "SLIDING_TOKEN_REFRESH_SERIALIZER": "rest_framework_simplejwt.serializers.TokenRefreshSlidingSerializer",
 }
+
+CRONJOBS = [
+    # ('* * * * *', 'api.cron.cron_job')
+]
