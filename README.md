@@ -49,7 +49,18 @@
     python3 manage.py migrate
     ```
 
-8.  Run the server:
+8.  Add cron jobs:
+    ```
+    python3 manage.py crontab add
+    ```
+
+    In case, you need to remove the cron jobs:
+    ```
+    python3 manage.py crontab remove
+    ```
+
+
+9.  Run the server:
     ```sh
     python3 manage.py runserver
     ```
@@ -158,13 +169,23 @@
     python3.11 manage.py migrate
     ```
 
-13. Test by running the server:
+13. Add cron jobs:
+    ```
+    python3.11 manage.py crontab add
+    ```
+
+    In case, you need to remove the cron jobs:
+    ```
+    python3.11 manage.py crontab remove
+    ```
+
+14. Test by running the server:
     ```sh
     python3.11 manage.py runserver
     ```
     Use Ctrl + C to stop the server.
 
-14. Install Gunicorn:
+15. Install Gunicorn:
     ```sh
     pip install gunicorn
     ```

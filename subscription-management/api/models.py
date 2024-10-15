@@ -6,7 +6,6 @@ from django.utils import timezone
 class Currency(models.Model):
     code = models.CharField(max_length=3, primary_key=True)
     name = models.CharField(max_length=320)
-    created_at = models.BigIntegerField()
 
     def __str__(self):
         return self.code
@@ -141,8 +140,6 @@ class Subscription(models.Model):
 class Upgrade(models.Model):
     from_plan = models.ForeignKey(Plan, related_name='from_plan', on_delete=models.CASCADE)
     to_plan = models.ForeignKey(Plan, related_name='to_plan', on_delete=models.CASCADE)
-    created_at = models.BigIntegerField(blank=True, null=True)
-    deleted_at = models.BigIntegerField(blank=True, null=True)
 
     class Meta:
         constraints = [

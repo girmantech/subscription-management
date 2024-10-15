@@ -204,7 +204,7 @@ SIMPLE_JWT = {
 }
 
 CRONJOBS = [
-    # ('* * * * *', 'api.cron.cron_job')
+    ('0 */2 * * *', 'api.cron.clean_invoices_and_subscriptions')
 ]
 
 RAZORPAY_KEY_ID = environ.get('RAZORPAY_KEY_ID')
