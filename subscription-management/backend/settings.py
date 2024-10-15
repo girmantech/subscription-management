@@ -206,3 +206,12 @@ SIMPLE_JWT = {
 CRONJOBS = [
     # ('* * * * *', 'api.cron.cron_job')
 ]
+
+RAZORPAY_KEY_ID = environ.get('RAZORPAY_KEY_ID')
+RAZORPAY_KEY_SECRET = environ.get('RAZORPAY_KEY_SECRET')
+
+STRIPE_PUBLISHABLE_KEY = environ.get('STRIPE_PUBLISHABLE_KEY')
+STRIPE_SECRET_KEY = environ.get('STRIPE_SECRET_KEY')
+STRIPE_WEBHOOK_SECRET = environ.get('STRIPE_WEBHOOK_SECRET')
+
+FRONTEND_URL = 'http://dummy_url/'

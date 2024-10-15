@@ -95,11 +95,11 @@ class Invoice(models.Model):
     
     status = models.CharField(max_length=7, choices=InvoiceStatus.choices, default=InvoiceStatus.UNPAID)
 
-    due_date = models.BigIntegerField()
+    due_at = models.BigIntegerField()
     paid_at = models.BigIntegerField(blank=True, null=True)
     created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
-    # order_id = models.CharField(max_length=255)
+    provider_session_or_order_id = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"Invoice {self.id} - {self.customer.name} - {self.plan.product.name} - {self.plan.billing_interval} Month(s) - Total: {self.total_amount}"
@@ -131,8 +131,23 @@ class Subscription(models.Model):
     )
 
     cancelled_at = models.BigIntegerField(blank=True, null=True)
-    created_at = models.BigIntegerField(blank=True, null=True)
+    created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
 
     def __str__(self):
         return f"Subscription {self.id} for Invoice {self.invoice.id} - Status: {self.status}"
+
+
+class Upgrade(models.Model):
+    from_plan = models.ForeignKey(Plan, related_name='from_plan', on_delete=models.CASCADE)
+    to_plan = models.ForeignKey(Plan, related_name='to_plan', on_delete=models.CASCADE)
+    created_at = models.BigIntegerField(blank=True, null=True)
+    deleted_at = models.BigIntegerField(blank=True, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['from_plan', 'to_plan'], name='unique_plan_pair')
+        ]
+
+    def __str__(self):
+        return f"Change from {self.from_plan} to {self.to_plan}"

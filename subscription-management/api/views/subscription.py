@@ -1,12 +1,28 @@
+from django.conf import settings
 from django.db import connection, transaction
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
 
+import razorpay
+import stripe
+
 from .. import models
 from ..utils import dictfetchone, dictfetchall
+
+
+# handling currency smallest denominations
+currency_unit_mapping = {'INR': 100, 'USD': 100}
+
+# Razorpay client
+razorpay_client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+
+# Stripe client
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 class Subscription(APIView):
@@ -54,15 +70,35 @@ class Subscription(APIView):
                 end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
 
             # TODO: handle smallest currency for amounts
+            total_amount = int(total_amount * currency_unit_mapping[customer.currency.code])
+
+            # generate order-id using Stripe session
+            session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': customer.currency.code.lower(),
+                        'product_data': {
+                            'name': 'Subscription Plan',
+                            'description': f'Plan {plan_id} for {billing_interval} month(s)',
+                        },
+                        'unit_amount': total_amount,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url=f'{settings.FRONTEND_URL}/success?session_id={{CHECKOUT_SESSION_ID}}',
+                cancel_url=f'{settings.FRONTEND_URL}/cancel',
+            )
             
             with transaction.atomic():
                 # creating invoice (draft)
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_date)
-                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'))
+                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_at, provider_session_or_order_id)
+                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'), %s)
                         RETURNING id;
-                    """, [customer.id, plan_id, tax_amount, total_amount])
+                    """, [customer.id, plan_id, tax_amount, total_amount, session.id])
 
                     result = dictfetchone(cursor)
                     invoice_id = result['id']
@@ -76,7 +112,10 @@ class Subscription(APIView):
 
             # TODO: Write a CRON-JOB to clean up the subscription and invoices table if the payment in not made within 2 hours 
 
-            return Response({'message': 'invoice and subscription created successfully'}, status=status.HTTP_201_CREATED)
+            return Response({
+                'checkout_url': session.url,
+                'message': 'Invoice and subscription created successfully'
+            }, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
             return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -103,107 +142,6 @@ class Subscription(APIView):
         
         except models.Customer.DoesNotExist:
             return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
-
-
-class ActivateSubscription(APIView):
-    def post(self, request):
-        invoice_id = request.data.get('invoice_id')
-        payment_status = request.data.get('payment_status')
-
-        if not invoice_id:
-            return Response({"error": "plan id missing"}, status=status.HTTP_400_BAD_REQUEST)
-        if not payment_status:
-            return Response({"error": "payment status missing"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            if payment_status == 'DUE':
-                return Response({"error": "payment is pending"}, status=status.HTTP_402_PAYMENT_REQUIRED)
-            
-            # ?? Check if invoice already paid
-            
-            if payment_status == 'SUCCESS':
-                # check if invoice id associated with any subscription
-                check_subscription = models.Subscription.objects.get(invoice_id=invoice_id)
-
-                with transaction.atomic():
-                    # updating invoice status to 'PAID'
-                    with connection.cursor() as cursor:
-                        cursor.execute("""
-                            UPDATE api_invoice SET status = 'PAID'
-                            WHERE id = %s;
-                        """, [invoice_id])
-
-                    # getting start timestamp of the corresponding subscription
-                    with connection.cursor() as cursor:
-                        cursor.execute("""
-                            SELECT starts_at FROM api_subscription
-                            WHERE invoice_id = %s;
-                        """, [invoice_id])
-
-                        result = dictfetchone(cursor)
-                        starts_at = result['starts_at']
-
-                    ### first time activation case ###
-                    if starts_at <= int(timezone.now().timestamp()):
-                        # fetching billing interval
-                        with connection.cursor() as cursor:
-                            cursor.execute("""
-                                SELECT plan.billing_interval
-                                FROM api_invoice invoice
-                                JOIN api_plan plan
-                                ON invoice.plan_id = plan.id WHERE invoice.id = %s;
-                            """, [invoice_id])
-
-                            result = dictfetchone(cursor)
-                            billing_interval = result['billing_interval']
-                        
-                        current_timestamp = timezone.now()
-                        start_timestamp = int(current_timestamp.timestamp())
-                        end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
-
-                        with connection.cursor() as cursor:
-                            cursor.execute("""
-                                UPDATE api_subscription
-                                SET status='ACTIVE', starts_at = %s, ends_at = %s
-                                WHERE invoice_id = %s;
-                            """, [start_timestamp, end_timestamp, invoice_id])
-
-                        return Response({'message': 'subscription activated'}, status=status.HTTP_201_CREATED)
-
-                    ### renewal case ###
-                    else:
-                        # updating next subscription status to active
-                        with connection.cursor() as cursor:
-                            cursor.execute("""
-                                UPDATE api_subscription
-                                SET status = 'ACTIVE'
-                                WHERE invoice_id = %s
-                                RETURNING id;
-                            """, [invoice_id])
-
-                            result = dictfetchone(cursor)
-                            next_subscription_id = result['id']
-
-                        # update renewal information in the current subscription plan
-                        with connection.cursor() as cursor:
-                            cursor.execute("""
-                                UPDATE api_subscription SET
-                                renewed_at = EXTRACT(EPOCH FROM NOW()),
-                                renewed_subscription_id = %s
-                                WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
-                                AND deleted_at IS NULL AND status = 'ACTIVE';
-                            """, [next_subscription_id])
-
-                    return Response({'message': 'subscription renewed'}, status=status.HTTP_201_CREATED)
-            
-            else:
-                return Response({"error": "invalid payment status"}, status=status.HTTP_400_BAD_REQUEST)
-            
-        except models.Subscription.DoesNotExist:
-            return Response({"error": "subscription not found"}, status=status.HTTP_404_NOT_FOUND)
-
-        except Exception as e:
-            return Response({'error': str(e)}, status=500)
 
 
 class UpgradeSubscription(APIView):
@@ -290,7 +228,7 @@ class UpgradeSubscription(APIView):
                 # creating invoice (draft)
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_date)
+                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_at)
                         VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'))
                         RETURNING id;
                     """, [customer.id, plan_id, tax_amount, total_amount])
@@ -397,3 +335,129 @@ class CancelSubscription(APIView):
         
         except Exception as e:
             return Response({'error': str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class StripeWebhookView(APIView):
+    def post(self, request):
+        payload = request.body
+        sig_header = request.META.get('HTTP_STRIPE_SIGNATURE')
+
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except (ValueError, stripe.error.SignatureVerificationError):
+            return Response({'error': 'Invalid payload or signature'}, status=status.HTTP_400_BAD_REQUEST)
+
+        event_type = event['type']
+        session = event['data']['object']
+
+        if event_type == 'checkout.session.completed':
+            return self.handle_payment_success(session)
+
+        else:
+            return self.handle_payment_failure(session)
+
+    def handle_payment_success(self, session):
+        try:
+            # checking if invoice and subscription associated with stripe session exist
+            invoice = models.Invoice.objects.get(provider_session_or_order_id=session.id)
+            subscription = models.Subscription.objects.get(invoice=invoice)
+
+            invoice_id = invoice.id
+
+            with transaction.atomic():
+                # updating invoice status to 'PAID'
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        UPDATE api_invoice SET status = 'PAID'
+                        WHERE id = %s;
+                    """, [invoice_id])
+
+                # getting start timestamp of the corresponding subscription
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT starts_at FROM api_subscription
+                        WHERE invoice_id = %s;
+                    """, [invoice_id])
+
+                    result = dictfetchone(cursor)
+                    starts_at = result['starts_at']
+
+                ### first time activation case ###
+                if starts_at <= int(timezone.now().timestamp()):
+                    # fetching billing interval
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT plan.billing_interval
+                            FROM api_invoice invoice
+                            JOIN api_plan plan
+                            ON invoice.plan_id = plan.id WHERE invoice.id = %s;
+                        """, [invoice_id])
+
+                        result = dictfetchone(cursor)
+                        billing_interval = result['billing_interval']
+                    
+                    current_timestamp = timezone.now()
+                    start_timestamp = int(current_timestamp.timestamp())
+                    end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
+
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            UPDATE api_subscription
+                            SET status='ACTIVE', starts_at = %s, ends_at = %s
+                            WHERE invoice_id = %s;
+                        """, [start_timestamp, end_timestamp, invoice_id])
+
+                    return Response({'message': 'subscription activated'}, status=status.HTTP_201_CREATED)
+
+                ### renewal case ###
+                else:
+                    # updating next subscription status to active
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            UPDATE api_subscription
+                            SET status = 'ACTIVE'
+                            WHERE invoice_id = %s
+                            RETURNING id;
+                        """, [invoice_id])
+
+                        result = dictfetchone(cursor)
+                        next_subscription_id = result['id']
+
+                    # update renewal information in the current subscription plan
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            UPDATE api_subscription SET
+                            renewed_at = EXTRACT(EPOCH FROM NOW()),
+                            renewed_subscription_id = %s
+                            WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                            AND deleted_at IS NULL AND status = 'ACTIVE';
+                        """, [next_subscription_id])
+
+                return Response({'message': 'Payment successful, invoice and subscription updated'}, status=status.HTTP_200_OK)
+
+        except models.Invoice.DoesNotExist:
+            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        except models.Subscription.DoesNotExist:
+            return Response({'error': 'Subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    def handle_payment_failure(self, session):
+        try:
+            invoice = models.Invoice.objects.get(stripe_session_id=session.id)
+            invoice.status = models.Invoice.InvoiceStatus.UNPAID
+            invoice.save()
+
+            subscription = models.Subscription.objects.get(invoice=invoice)
+            subscription.status = 'CANCELED'
+            subscription.save()
+
+            return Response({'message': 'Payment expired or failed, invoice and subscription canceled'}, status=status.HTTP_200_OK)
+
+        except models.Invoice.DoesNotExist:
+            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        except models.Subscription.DoesNotExist:
+            return Response({'error': 'Subscription not found'}, status=status.HTTP_404_NOT_FOUND)
