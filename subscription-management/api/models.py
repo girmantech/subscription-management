@@ -58,7 +58,7 @@ class Product(models.Model):
 
 
 class ProductPricing(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_pricings')
     from_date = models.BigIntegerField()
     to_date = models.BigIntegerField()
     price = models.DecimalField(max_digits=10, decimal_places=3)
@@ -72,7 +72,7 @@ class ProductPricing(models.Model):
 
 
 class Plan(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.RESTRICT)
+    product = models.ForeignKey(Product, on_delete=models.RESTRICT, related_name='plans')
     billing_interval = models.IntegerField(default=1)
     created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
@@ -148,3 +148,8 @@ class Upgrade(models.Model):
 
     def __str__(self):
         return f"Change from {self.from_plan} to {self.to_plan}"
+
+
+class SubscriptionRenewalReminder(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.DO_NOTHING, related_name="subscription_renewal_reminders")
+    created_at = models.BigIntegerField()    

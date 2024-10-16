@@ -69,10 +69,10 @@ class Subscription(APIView):
                 start_timestamp = int(current_timestamp.timestamp())
                 end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
 
-            # TODO: handle smallest currency for amounts
             total_amount = int(total_amount * currency_unit_mapping[customer.currency.code])
+            tax_amount = int(tax_amount * currency_unit_mapping[customer.currency.code])
 
-            # generate order-id using Stripe session
+            # generate session-id using Stripe session
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
                 line_items=[{
@@ -110,11 +110,9 @@ class Subscription(APIView):
                         VALUES ('INACTIVE', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()))
                     """, [invoice_id, customer.id, start_timestamp, end_timestamp])
 
-            # TODO: Write a CRON-JOB to clean up the subscription and invoices table if the payment in not made within 2 hours 
-
             return Response({
                 'checkout_url': session.url,
-                'message': 'Invoice and subscription created successfully'
+                'message': 'invoice and subscription created successfully'
             }, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
@@ -132,9 +130,10 @@ class Subscription(APIView):
                 cursor.execute("""
                     SELECT * FROM api_subscription
                     WHERE customer_id = %s
-                    WHERE EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                    AND EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
                     AND status = 'ACTIVE' AND deleted_at IS NULL;
                 """, [customer.id])
+                
                 
                 result = dictfetchall(cursor)
 
@@ -188,7 +187,7 @@ class UpgradeSubscription(APIView):
                     (current_subscription_ends_at - current_subscription_starts_at)
                 
             # calculating unused amount
-            unused_amount = (current_subscription_total_amount - current_subscription_tax_amount) * unused_percentage
+            unused_amount = int((current_subscription_total_amount - current_subscription_tax_amount) * unused_percentage)
             
             # fetching product price, tax percentage and billing interval for the next_plan
             with connection.cursor() as cursor:
@@ -214,24 +213,44 @@ class UpgradeSubscription(APIView):
 
                 tax_amount = (tax_percentage / 100) * (price * billing_interval)
 
-                # removing unused amount from the total amount for the next plan
-                total_amount = (price * billing_interval) + tax_amount - unused_amount
+                total_amount = (price * billing_interval) + tax_amount
                 
                 current_timestamp = timezone.now()
                 start_timestamp = int(current_timestamp.timestamp())
                 end_timestamp = int((current_timestamp + timezone.timedelta(days=30 * billing_interval)).timestamp())
 
-            # TODO: handle smallest currency for amounts
+            # removing unused amount from the total amount for the next plan
+            total_amount = int(total_amount * currency_unit_mapping[customer.currency.code]) - unused_amount
+            tax_amount = int(tax_amount * currency_unit_mapping[customer.currency.code])
+
+            # generate session-id using Stripe session
+            session = stripe.checkout.Session.create(
+                payment_method_types=['card'],
+                line_items=[{
+                    'price_data': {
+                        'currency': customer.currency.code.lower(),
+                        'product_data': {
+                            'name': 'Subscription Plan Upgrade',
+                            'description': f'Plan {plan_id} for {billing_interval} month(s)',
+                        },
+                        'unit_amount': total_amount,
+                    },
+                    'quantity': 1,
+                }],
+                mode='payment',
+                success_url=f'{settings.FRONTEND_URL}/success?session_id={{CHECKOUT_SESSION_ID}}',
+                cancel_url=f'{settings.FRONTEND_URL}/cancel',
+            )
 
             # creating new invoice and subscriptions
             with transaction.atomic():
                 # creating invoice (draft)
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_at)
-                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'))
+                        INSERT INTO api_invoice (status, customer_id, plan_id, tax_amount, total_amount, created_at, due_at, provider_session_or_order_id)
+                        VALUES ('DRAFT', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()), EXTRACT(EPOCH FROM NOW() + INTERVAL '2 hours'), %s)
                         RETURNING id;
-                    """, [customer.id, plan_id, tax_amount, total_amount])
+                    """, [customer.id, plan_id, tax_amount, total_amount, session.id])
 
                     result = dictfetchone(cursor)
                     invoice_id = result['id']
@@ -239,22 +258,24 @@ class UpgradeSubscription(APIView):
                 # creating subscription (inactive)
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        INSERT INTO api_subscription (status, invoice_id, customer_id, starts_at, ends_at)
-                        VALUES ('INACTIVE', %s, %s, %s, %s)
+                        INSERT INTO api_subscription (status, invoice_id, customer_id, starts_at, ends_at, created_at)
+                        VALUES ('INACTIVE', %s, %s, %s, %s, EXTRACT(EPOCH FROM NOW()))
                     """, [invoice_id, customer.id, start_timestamp, end_timestamp])
 
+                # updating upgrade information in the current subscription
                 with connection.cursor() as cursor:
                     cursor.execute("""
                         UPDATE api_subscription SET
-                            upgraded_at = EXTRACT(EPOCH FROM NOW()),
-                            upgraded_to_plan_id = %s,
-                            status = 'UPGRADED'
+                            upgraded_to_plan_id = %s
                         WHERE customer_id = %s
                             AND EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
                             AND deleted_at IS NULL AND status = 'ACTIVE';
                     """, [plan_id, customer.id])
 
-            return Response({'message': 'subscription upgraded successfully'}, status=status.HTTP_201_CREATED)
+            return Response({
+                'checkout_url': session.url,
+                'message': 'invoice and subscription created successfully'
+            }, status=status.HTTP_201_CREATED)
 
         except models.Customer.DoesNotExist:
             return Response({"error": "customer not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -348,7 +369,7 @@ class StripeWebhookView(APIView):
                 payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
             )
         except (ValueError, stripe.error.SignatureVerificationError):
-            return Response({'error': 'Invalid payload or signature'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'invalid payload or signature'}, status=status.HTTP_400_BAD_REQUEST)
 
         event_type = event['type']
         session = event['data']['object']
@@ -398,6 +419,32 @@ class StripeWebhookView(APIView):
 
                         result = dictfetchone(cursor)
                         billing_interval = result['billing_interval']
+
+                    # checking if there is a currently active subscription
+                    # which is supposed to be upgraded to the invoice plan id
+                    with connection.cursor() as cursor:
+                        cursor.execute("""
+                            SELECT id FROM api_subscription
+                                WHERE customer_id = %s
+                                AND EXTRACT(EPOCH FROM NOW()) BETWEEN starts_at AND ends_at
+                                AND deleted_at IS NULL AND status = 'ACTIVE'
+                                AND upgraded_to_plan_id = %s;
+                        """, [subscription.customer.id, invoice.plan_id])
+
+                        try:
+                            result = dictfetchone(cursor)
+                        except:
+                            result = None
+                    
+                    # updating upgrade information in the current subscription
+                    if result:
+                        with connection.cursor() as cursor:
+                            cursor.execute("""
+                                UPDATE api_subscription SET
+                                    upgraded_at = EXTRACT(EPOCH FROM NOW()),
+                                    status = 'UPGRADED'
+                                WHERE id = %s;
+                                """, [result['id']])
                     
                     current_timestamp = timezone.now()
                     start_timestamp = int(current_timestamp.timestamp())
@@ -436,13 +483,16 @@ class StripeWebhookView(APIView):
                             AND deleted_at IS NULL AND status = 'ACTIVE';
                         """, [next_subscription_id])
 
-                return Response({'message': 'Payment successful, invoice and subscription updated'}, status=status.HTTP_200_OK)
+                return Response({'message': 'payment successful, invoice and subscription updated'}, status=status.HTTP_200_OK)
 
         except models.Invoice.DoesNotExist:
-            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'invoice not found'}, status=status.HTTP_404_NOT_FOUND)
         
         except models.Subscription.DoesNotExist:
-            return Response({'error': 'Subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
     def handle_payment_failure(self, session):
         try:
@@ -451,13 +501,14 @@ class StripeWebhookView(APIView):
             invoice.save()
 
             subscription = models.Subscription.objects.get(invoice=invoice)
-            subscription.status = 'CANCELED'
-            subscription.save()
 
-            return Response({'message': 'Payment expired or failed, invoice and subscription canceled'}, status=status.HTTP_200_OK)
+            return Response({'message': 'payment expired or failed, invoice and subscription canceled'}, status=status.HTTP_200_OK)
 
         except models.Invoice.DoesNotExist:
-            return Response({'error': 'Invoice not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'invoice not found'}, status=status.HTTP_404_NOT_FOUND)
         
         except models.Subscription.DoesNotExist:
-            return Response({'error': 'Subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'subscription not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)

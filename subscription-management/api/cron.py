@@ -10,7 +10,7 @@ def clean_invoices_and_subscriptions():
                 SET deleted_at = EXTRACT(EPOCH FROM NOW())
                 FROM api_invoice i
                 WHERE s.invoice_id = i.id
-                AND i.deleted_at IS NOT NULL OR (EXTRACT(EPOCH FROM NOW()) > i.due_date AND i.status = 'DRAFT')
+                AND (i.deleted_at IS NOT NULL OR (EXTRACT(EPOCH FROM NOW()) > i.due_at AND i.status <> 'PAID'))
             """)
 
         # deleting invoice where invoice is unpaid past the due time
@@ -18,5 +18,5 @@ def clean_invoices_and_subscriptions():
             cursor.execute("""
                 UPDATE api_invoice i
                 SET deleted_at = EXTRACT(EPOCH FROM NOW())
-                WHERE (i.deleted_at IS NOT NULL OR (EXTRACT(EPOCH FROM NOW()) > i.due_date AND i.status = 'DRAFT'))
+                WHERE (i.deleted_at IS NOT NULL OR (EXTRACT(EPOCH FROM NOW()) > i.due_at AND i.status <> 'PAID'))
             """)
