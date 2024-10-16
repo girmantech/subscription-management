@@ -12,11 +12,9 @@ import razorpay
 import stripe
 
 from .. import models
-from ..utils import dictfetchone, dictfetchall
-
-
-# handling currency smallest denominations
-currency_unit_mapping = {'INR': 100, 'USD': 100}
+from ..utils import (
+    dictfetchone, dictfetchall, currency_unit_mapping
+)
 
 # Razorpay client
 razorpay_client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
@@ -87,7 +85,7 @@ class Subscription(APIView):
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url=f'{settings.FRONTEND_URL}/success?session_id={{CHECKOUT_SESSION_ID}}',
+                success_url=f'{settings.FRONTEND_URL}/success',
                 cancel_url=f'{settings.FRONTEND_URL}/cancel',
             )
             
@@ -238,7 +236,7 @@ class UpgradeSubscription(APIView):
                     'quantity': 1,
                 }],
                 mode='payment',
-                success_url=f'{settings.FRONTEND_URL}/success?session_id={{CHECKOUT_SESSION_ID}}',
+                success_url=f'{settings.FRONTEND_URL}/success',
                 cancel_url=f'{settings.FRONTEND_URL}/cancel',
             )
 
