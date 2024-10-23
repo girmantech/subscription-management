@@ -151,5 +151,8 @@ class Upgrade(models.Model):
 
 
 class SubscriptionRenewalReminder(models.Model):
-    customer = models.ForeignKey(Customer, on_delete=models.DO_NOTHING, related_name="subscription_renewal_reminders")
-    created_at = models.BigIntegerField()    
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="subscription_renewal_reminders")
+    created_at = models.BigIntegerField()
+
+    def __str__(self):
+        return f'Customer {self.customer.id} notfied at {self.created_at}'

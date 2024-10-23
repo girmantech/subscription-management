@@ -204,7 +204,8 @@ SIMPLE_JWT = {
 }
 
 CRONJOBS = [
-    ('0 */2 * * *', 'api.cron.clean_invoices_and_subscriptions')
+    ('0 */2 * * *', 'api.cron.clean_invoices_and_subscriptions'),
+    ('0 0 */1 * *', 'api.cron.send_renewal_reminders'),
 ]
 
 RAZORPAY_KEY_ID = environ.get('RAZORPAY_KEY_ID')
@@ -214,4 +215,4 @@ STRIPE_PUBLISHABLE_KEY = environ.get('STRIPE_PUBLISHABLE_KEY')
 STRIPE_SECRET_KEY = environ.get('STRIPE_SECRET_KEY')
 STRIPE_WEBHOOK_SECRET = environ.get('STRIPE_WEBHOOK_SECRET')
 
-FRONTEND_URL = 'http://dummy_url/'
+FRONTEND_URL = 'https://dummy-url'

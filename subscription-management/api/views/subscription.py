@@ -390,7 +390,9 @@ class StripeWebhookView(APIView):
                 # updating invoice status to 'PAID'
                 with connection.cursor() as cursor:
                     cursor.execute("""
-                        UPDATE api_invoice SET status = 'PAID'
+                        UPDATE api_invoice SET
+                            status = 'PAID',
+                            paid_at = EXTRACT(EPOCH FROM NOW())
                         WHERE id = %s;
                     """, [invoice_id])
 

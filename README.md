@@ -26,6 +26,10 @@
     source venv/bin/activate  # for Linux/macOS
     venv\Scripts\activate     # for Windows
     ```
+    Navigate to `subscription-management` directory:
+    ```sh
+    cd subscription-management
+    ```
 
 4.  Install dependencies:
     ```sh
@@ -33,7 +37,7 @@
     ```
 
 5.  Set up environment variables (create a .env file in the same directory based on .env.example):
-    ```
+    ```sh
     cp .env.example .env
     ```
     Update the .env file with your configuration values (as per requirements).
@@ -136,6 +140,10 @@
     ```sh
     python3.11 -m venv venv
     source venv/bin/activate
+    ```
+    Navigate to `subscription-management` directory:
+    ```sh
+    cd subscription-management
     ```
 
 9.  Install dependencies:
