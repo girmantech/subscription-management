@@ -11,6 +11,7 @@ class JWTAuthMiddleware:
             '/api/validate-otp': ['POST'],
             '/api/token/refresh': ['POST'],
             '/api/subscriptions/activate': ['POST'],
+            '/api/stripe-webhook': ['POST']
         }
 
     def __call__(self, request):

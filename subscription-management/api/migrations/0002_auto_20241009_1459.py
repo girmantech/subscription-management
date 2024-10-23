@@ -11,6 +11,10 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunSQL(
+            "CREATE EXTENSION IF NOT EXISTS btree_gist;",
+        ),
+
+        migrations.RunSQL(
             """
             ALTER TABLE api_productpricing
             ADD CONSTRAINT unique_price_in_interval EXCLUDE USING gist (

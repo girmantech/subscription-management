@@ -13,9 +13,9 @@ urlpatterns = [
     path('plans', plan.PlanList.as_view(), name='plan_list'),
     path('plans/<int:product_id>', plan.PlanListForProduct.as_view(), name='plan_list_for_product'),
     path('subscriptions', subscription.Subscription.as_view(), name='subscription'),
-    path('subscriptions/activate', subscription.ActivateSubscription.as_view(), name='activate_subscription'),
     path('subscriptions/upgrade', subscription.UpgradeSubscription.as_view(), name='upgrade_subscription'),
     path('subscriptions/downgrade', subscription.DowngradeSubscription.as_view(), name='downgrade_subscription'),
     path('subscriptions/cancel', subscription.CancelSubscription.as_view(), name='cancel_subscription'),
     path('invoices', invoice.InvoiceList.as_view(), name='invoice_list'),
+    path('stripe-webhook', subscription.StripeWebhookView.as_view(), name='stripe_webhook'),
 ]
