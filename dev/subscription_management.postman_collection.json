@@ -25,7 +25,7 @@
 				"header": [],
 				"body": {
 					"mode": "raw",
-					"raw": "{\n    \"name\": \"Tanish Pagaria\",\n    \"phone\": {{phone_number}}\n}",
+					"raw": "{\n    \"name\": \"FirstName LastName\",\n    \"phone\": {{phone_number}}\n}",
 					"options": {
 						"raw": {
 							"language": "json"
