@@ -6,7 +6,6 @@ from django.utils import timezone
 class Currency(models.Model):
     code = models.CharField(max_length=3, primary_key=True)
     name = models.CharField(max_length=320)
-    created_at = models.BigIntegerField()
 
     def __str__(self):
         return self.code
@@ -59,7 +58,7 @@ class Product(models.Model):
 
 
 class ProductPricing(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='product_pricings')
     from_date = models.BigIntegerField()
     to_date = models.BigIntegerField()
     price = models.DecimalField(max_digits=10, decimal_places=3)
@@ -73,7 +72,7 @@ class ProductPricing(models.Model):
 
 
 class Plan(models.Model):
-    product = models.ForeignKey(Product, on_delete=models.RESTRICT)
+    product = models.ForeignKey(Product, on_delete=models.RESTRICT, related_name='plans')
     billing_interval = models.IntegerField(default=1)
     created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
@@ -95,10 +94,11 @@ class Invoice(models.Model):
     
     status = models.CharField(max_length=7, choices=InvoiceStatus.choices, default=InvoiceStatus.UNPAID)
 
-    due_date = models.BigIntegerField()
+    due_at = models.BigIntegerField()
     paid_at = models.BigIntegerField(blank=True, null=True)
     created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
+    provider_session_or_order_id = models.CharField(max_length=255, blank=True, null=True)
 
     def __str__(self):
         return f"Invoice {self.id} - {self.customer.name} - {self.plan.product.name} - {self.plan.billing_interval} Month(s) - Total: {self.total_amount}"
@@ -130,8 +130,29 @@ class Subscription(models.Model):
     )
 
     cancelled_at = models.BigIntegerField(blank=True, null=True)
-    created_at = models.BigIntegerField(blank=True, null=True)
+    created_at = models.BigIntegerField()
     deleted_at = models.BigIntegerField(blank=True, null=True)
 
     def __str__(self):
         return f"Subscription {self.id} for Invoice {self.invoice.id} - Status: {self.status}"
+
+
+class Upgrade(models.Model):
+    from_plan = models.ForeignKey(Plan, related_name='from_plan', on_delete=models.CASCADE)
+    to_plan = models.ForeignKey(Plan, related_name='to_plan', on_delete=models.CASCADE)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['from_plan', 'to_plan'], name='unique_plan_pair')
+        ]
+
+    def __str__(self):
+        return f"Change from {self.from_plan} to {self.to_plan}"
+
+
+class SubscriptionRenewalReminder(models.Model):
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name="subscription_renewal_reminders")
+    created_at = models.BigIntegerField()
+
+    def __str__(self):
+        return f'Customer {self.customer.id} notfied at {self.created_at}'

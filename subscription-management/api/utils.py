@@ -26,3 +26,6 @@ def generate_refresh_token(customer):
         'access_token': str(refresh.access_token),
         'refresh_token': str(refresh),
     }
+
+# handling currency smallest denominations
+currency_unit_mapping = {'INR': 100, 'USD': 100}
